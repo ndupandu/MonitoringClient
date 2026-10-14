@@ -18,7 +18,7 @@ android {
     compileSdk 34
 
     defaultConfig {
-        applicationId 'id.pandu.monitoringclient'
+        applicationId 'id.pandu.monitoringolt'
         minSdk 24
         targetSdk 34
         versionCode 1000 + runNo          // naik otomatis tiap build GitHub, supaya APK baru bisa menimpa yang lama
