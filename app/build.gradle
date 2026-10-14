@@ -9,8 +9,12 @@ if (file('google-services.json').exists()) {
 }
 
 // Alamat dashboard: dari env DASHBOARD_URL (secret GitHub) atau -PDASHBOARD_URL=... saat build lokal.
-def dashUrl = (System.getenv('DASHBOARD_URL') ?: project.findProperty('DASHBOARD_URL') ?: 'https://dashboard.contoh.id')
-        .toString().trim().replaceAll('/+$', '')
+def dashRaw = (System.getenv('DASHBOARD_URL') ?: project.findProperty('DASHBOARD_URL') ?: 'https://dashboard.contoh.id')
+        .toString().trim()
+if (!dashRaw.contains('://')) dashRaw = 'https://' + dashRaw
+def dashUri = new URI(dashRaw)
+// Hanya alamat server (skema + host + port); jalur seperti /login otomatis dibuang.
+def dashUrl = dashUri.scheme + '://' + dashUri.authority
 def runNo = System.getenv('GITHUB_RUN_NUMBER') ? System.getenv('GITHUB_RUN_NUMBER').toInteger() : 1
 
 android {
