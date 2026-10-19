@@ -94,7 +94,7 @@ public class MyFirebaseService extends FirebaseMessagingService {
         String speak = d.get("speak");
         if (speak != null && !speak.trim().isEmpty() && loud && !MainActivity.visible
                 && getSharedPreferences(PREF, MODE_PRIVATE).getBoolean("voice", true)) {
-            VoiceAnnouncer.say(this, speak.trim(), 1300);       // jeda: bunyi notifikasi selesai dulu
+            VoiceAnnouncer.sayAndWait(this, speak.trim(), 1300, 15000);       // jeda: bunyi notifikasi selesai dulu
         }
     }
 }

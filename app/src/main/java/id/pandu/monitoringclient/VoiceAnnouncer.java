@@ -14,6 +14,8 @@ import android.speech.tts.UtteranceProgressListener;
 import android.util.Log;
 
 import java.util.Locale;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Mengucapkan sapaan tiket baru lewat TextToSpeech bawaan HP (bahasa Indonesia), juga saat aplikasi tertutup.
@@ -29,6 +31,7 @@ public final class VoiceAnnouncer {
     private static PowerManager.WakeLock wl;
     private static AudioManager am;
     private static AudioFocusRequest afr;
+    private static volatile CountDownLatch done;         // dihitung turun saat sesi suara benar-benar selesai
     private static int gen = 0;                        // nomor sesi: pengaman lama tidak mematikan sesi yang lebih baru
 
     private VoiceAnnouncer() {}
@@ -39,8 +42,24 @@ public final class VoiceAnnouncer {
         H.post(() -> start(app, text, delayMs));
     }
 
+    /**
+     * Sama seperti say(), tetapi MENAHAN thread pemanggil sampai ucapan selesai (maks `maxWaitMs`).
+     * Dipanggil dari onMessageReceived (thread latar FCM): selama thread itu hidup, Android tidak mematikan proses
+     * aplikasi, jadi suara tidak terpotong / tidak pernah mulai di HP yang agresif menghemat baterai.
+     */
+    public static void sayAndWait(final Context ctx, final String text, final long delayMs, final long maxWaitMs) {
+        final CountDownLatch l = new CountDownLatch(1);
+        done = l;
+        say(ctx, text, delayMs);
+        try {
+            l.await(maxWaitMs, TimeUnit.MILLISECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
     private static void start(final Context app, final String text, final long delayMs) {
-        release();
+        cleanup();
         final int my = ++gen;
         Log.d(TAG, "start: \"" + text + "\"");
         try {
@@ -100,8 +119,15 @@ public final class VoiceAnnouncer {
         } catch (Exception ignored) { }
     }
 
-    @SuppressWarnings("deprecation")
+    /** Selesai: lepas semua sumber daya lalu bangunkan thread yang menunggu di sayAndWait(). */
     private static void release() {
+        cleanup();
+        CountDownLatch l = done;
+        if (l != null) l.countDown();
+    }
+
+    @SuppressWarnings("deprecation")
+    private static void cleanup() {
         try {
             if (tts != null) { tts.stop(); tts.shutdown(); }
         } catch (Exception ignored) { }
