@@ -19,7 +19,7 @@ import com.google.firebase.messaging.RemoteMessage;
 
 import java.util.Map;
 
-/** Menerima FCM saat APK terbuka (saat tertutup, sistem Android menampilkan notifikasinya sendiri). */
+/** Menerima FCM. Pesan "notification" saat aplikasi tertutup ditampilkan sistem sendiri; pesan data-only (berisi "speak") selalu lewat sini. */
 public class MyFirebaseService extends FirebaseMessagingService {
     public static final String CH_LOUD = "tiket_baru";   // harus sama dengan FCM_CHANNEL_LOUD di server
     public static final String CH_INFO = "tiket_info";   // harus sama dengan FCM_CHANNEL_INFO di server
@@ -88,5 +88,13 @@ public class MyFirebaseService extends FirebaseMessagingService {
             // tag yang sama dengan notifikasi buatan sistem -> tidak dobel
             NotificationManagerCompat.from(this).notify(tag, 0, b.build());
         } catch (SecurityException ignored) { /* izin POST_NOTIFICATIONS belum diberikan */ }
+
+        // Sapaan suara ("Halo <nama>, ada tiket baru nih ...") dari server. Saat aplikasi sedang tampil, halaman web
+        // yang mengucapkannya sendiri (supaya tidak dobel), jadi di sini dilewati.
+        String speak = d.get("speak");
+        if (speak != null && !speak.trim().isEmpty() && loud && !MainActivity.visible
+                && getSharedPreferences(PREF, MODE_PRIVATE).getBoolean("voice", true)) {
+            VoiceAnnouncer.say(this, speak.trim(), 1300);       // jeda: bunyi notifikasi selesai dulu
+        }
     }
 }

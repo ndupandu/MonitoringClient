@@ -41,6 +41,9 @@ import com.google.firebase.messaging.FirebaseMessaging;
 /** Pembungkus dashboard web dalam WebView: unggah foto, kamera, lokasi, unduhan, dan notifikasi FCM. */
 public class MainActivity extends AppCompatActivity {
 
+    /** True selama aplikasi tampil di layar (dibaca MyFirebaseService agar sapaan suara tidak dobel dengan halaman web). */
+    static volatile boolean visible = false;
+
     private WebView web;
     private String baseUrl;
     private String baseHost;
@@ -329,6 +332,18 @@ public class MainActivity extends AppCompatActivity {
     }
 
     @Override
+    protected void onStart() {
+        super.onStart();
+        visible = true;
+    }
+
+    @Override
+    protected void onStop() {
+        visible = false;
+        super.onStop();
+    }
+
+    @Override
     protected void onPause() {
         super.onPause();
         CookieManager.getInstance().flush();            // sesi login tidak hilang saat aplikasi dimatikan
@@ -347,6 +362,13 @@ public class MainActivity extends AppCompatActivity {
         public String getToken() {
             if (!sameHost(curHost)) return "";
             return getSharedPreferences(MyFirebaseService.PREF, MODE_PRIVATE).getString("token", "");
+        }
+
+        /** Saklar "Sapaan suara tiket baru" di halaman e-tiket; dipakai juga saat aplikasi tertutup. */
+        @JavascriptInterface
+        public void setVoice(boolean on) {
+            if (!sameHost(curHost)) return;
+            getSharedPreferences(MyFirebaseService.PREF, MODE_PRIVATE).edit().putBoolean("voice", on).apply();
         }
 
         @JavascriptInterface
