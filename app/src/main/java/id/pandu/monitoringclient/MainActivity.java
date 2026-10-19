@@ -54,6 +54,8 @@ public class MainActivity extends AppCompatActivity {
     private GeolocationPermissions.Callback pendingGeoCb;
     private String pendingGeoOrigin;
     private String[] pendingDownload;
+    private boolean pendingLocStart = false;       // menunggu jawaban izin lokasi untuk memulai berbagi lokasi latar belakang
+    private boolean locAsked = false;               // izin lokasi hanya ditanyakan sekali per proses (halaman memanggil start() tiap dimuat)
     private boolean healed = false;                 // pengaman 404: maksimal satu kali pulang ke beranda per kejadian
 
     private ActivityResultLauncher<Intent> chooserLauncher;
@@ -88,6 +90,10 @@ public class MainActivity extends AppCompatActivity {
                 boolean ok = has(Manifest.permission.ACCESS_FINE_LOCATION) || has(Manifest.permission.ACCESS_COARSE_LOCATION);
                 pendingGeoCb.invoke(pendingGeoOrigin, ok, false);
                 pendingGeoCb = null;
+            }
+            if (pendingLocStart && res.containsKey(Manifest.permission.ACCESS_FINE_LOCATION)) {
+                pendingLocStart = false;
+                if (has(Manifest.permission.ACCESS_FINE_LOCATION) || has(Manifest.permission.ACCESS_COARSE_LOCATION)) beginLocationSharing();
             }
             if (pendingDownload != null && res.containsKey(Manifest.permission.WRITE_EXTERNAL_STORAGE)) {
                 String[] d = pendingDownload;
@@ -150,6 +156,7 @@ public class MainActivity extends AppCompatActivity {
         cm.setAcceptThirdPartyCookies(web, false);
 
         web.addJavascriptInterface(new FcmBridge(), "AndroidFCM");
+        web.addJavascriptInterface(new LocBridge(), "AndroidLoc");
 
         web.setWebViewClient(new WebViewClient() {
             @Override
@@ -293,6 +300,49 @@ public class MainActivity extends AppCompatActivity {
         web.loadDataWithBaseURL(baseUrl, html, "text/html", "utf-8", null);
     }
 
+    /** Mulai berbagi lokasi latar belakang (thread utama). Dipanggil halaman setiap dimuat, jadi harus aman diulang. */
+    private void startLocationSharing() {
+        if (LocationService.running) return;
+        if (has(Manifest.permission.ACCESS_FINE_LOCATION) || has(Manifest.permission.ACCESS_COARSE_LOCATION)) {
+            beginLocationSharing();
+        } else if (!locAsked) {
+            locAsked = true;
+            pendingLocStart = true;
+            permLauncher.launch(new String[]{Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION});
+        }
+    }
+
+    private void beginLocationSharing() {
+        try {
+            LocationService.start(this);              // dimulai saat aplikasi tampil, jadi diizinkan Android
+        } catch (Exception e) {
+            toast("Berbagi lokasi di latar belakang tidak bisa dimulai.");
+            return;
+        }
+        askBackgroundLocation();
+    }
+
+    /** Android 10+: izin "Izinkan sepanjang waktu" diminta terpisah, sekali saja, supaya lokasi tetap terkirim bila layanan dimulai ulang sistem. */
+    private void askBackgroundLocation() {
+        if (Build.VERSION.SDK_INT < 29 || has(Manifest.permission.ACCESS_BACKGROUND_LOCATION)) return;
+        SharedPreferences sp = getSharedPreferences("app", MODE_PRIVATE);
+        if (sp.getBoolean("bgloc_asked", false)) return;
+        sp.edit().putBoolean("bgloc_asked", true).apply();
+        new AlertDialog.Builder(this)
+                .setTitle("Lokasi di latar belakang")
+                .setMessage("Agar NOC tetap melihat posisi Anda saat aplikasi ditutup atau layar mati, pilih \"Izinkan sepanjang waktu\" untuk lokasi. "
+                        + "Selama berbagi lokasi aktif, ada notifikasi tetap \"Lokasi dibagikan ke NOC\". Berhenti dengan keluar dari akun.")
+                .setPositiveButton("Lanjut", (d, w) -> {
+                    try {
+                        permLauncher.launch(new String[]{Manifest.permission.ACCESS_BACKGROUND_LOCATION});
+                    } catch (Exception e) {
+                        startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + getPackageName())));
+                    }
+                })
+                .setNegativeButton("Nanti", null)
+                .show();
+    }
+
     private boolean sameHost(String host) {
         return host != null && baseHost != null && host.equalsIgnoreCase(baseHost);
     }
@@ -354,6 +404,26 @@ public class MainActivity extends AppCompatActivity {
         if (filePathCb != null) { filePathCb.onReceiveValue(null); filePathCb = null; }
         web.destroy();
         super.onDestroy();
+    }
+
+    /** Dipanggil halaman dashboard untuk akun teknisi: berbagi lokasi ke NOC lewat layanan foreground (tetap jalan saat aplikasi ditutup). */
+    private class LocBridge {
+        @JavascriptInterface
+        public void start(String origin) {              // alamat dari halaman diabaikan: layanan selalu memakai BuildConfig.BASE_URL
+            if (!sameHost(curHost)) return;
+            runOnUiThread(MainActivity.this::startLocationSharing);
+        }
+
+        @JavascriptInterface
+        public void stop() {
+            if (!sameHost(curHost)) return;
+            LocationService.stopSharing(MainActivity.this);
+        }
+
+        @JavascriptInterface
+        public boolean running() {
+            return LocationService.running;
+        }
     }
 
     /** Dibaca halaman e-tiket (JavaScript) untuk mendaftarkan HP ini ke server. Hanya menjawab untuk halaman dashboard sendiri. */

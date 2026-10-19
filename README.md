@@ -34,3 +34,13 @@ Package/applicationId: `id.pandu.monitoringclient` (daftarkan nama ini di Fireba
 - Kamera dan GPS di halaman web hanya jalan lewat HTTPS. Kalau dashboard hanya `http://`, foto bukti dan lokasi tidak bisa dipakai.
 - Jika APK lama Anda memakai applicationId atau kunci tanda tangan berbeda, uninstall dulu APK lama sebelum memasang yang baru.
 - Build lokal: `gradle assembleRelease -PDASHBOARD_URL=https://...` (butuh JDK 17 dan Android SDK).
+
+## Berbagi lokasi di latar belakang (teknisi)
+Halaman dashboard memanggil `AndroidLoc.start()` untuk akun teknisi; aplikasi menyalakan `LocationService` (layanan foreground bertipe lokasi)
+yang mengirim posisi tiap ~15 detik ke `/api/teknisi/lokasi` dengan sesi login yang sama. Berhenti saat keluar dari akun, lewat tombol
+"Berhenti" di notifikasi, atau bila server menolak sesi. Teknisi perlu memilih "Izinkan sepanjang waktu" untuk lokasi
+(diminta sekali) dan mengizinkan aplikasi berjalan tanpa batasan baterai.
+
+## Sapaan suara tiket baru (teknisi)
+Server mengirim pesan FCM data-only berisi `speak`; `MyFirebaseService` menampilkan notifikasi lalu `VoiceAnnouncer`
+mengucapkannya (TextToSpeech bahasa Indonesia) saat aplikasi tidak tampil. HP perlu data suara bahasa Indonesia (Google TTS).
