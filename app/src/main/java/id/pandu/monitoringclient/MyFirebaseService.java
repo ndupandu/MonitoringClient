@@ -27,7 +27,7 @@ public class MyFirebaseService extends FirebaseMessagingService {
     public static final String PREF = "fcm";
     /** Versi saluran sapaan. Harus sama dengan FCM_NAMED_VER di server. Naikkan (v2, v3, ...) bila file mp3 di res/raw diganti,
      *  karena nada sebuah saluran tidak bisa diubah setelah dibuat. */
-    public static final String NAMED_VER = "v1";
+    public static final String NAMED_VER = "v2";
 
     /** Panggil dari MainActivity.onCreate() DAN dari sini. Aman dipanggil berulang. */
     public static void createChannels(Context c) {
@@ -60,6 +60,18 @@ public class MyFirebaseService extends FirebaseMessagingService {
      * tetap bunyi walau aplikasi tertutup. Tidak ada file di res/raw = tidak ada saluran tambahan.
      */
     private static void createNamedChannels(Context c, NotificationManager nm, AudioAttributes aa) {
+        // Jalur ALARM: memakai volume alarm (bisa dibuat sangat keras) dan tetap bunyi walau mode senyap.
+        AudioAttributes alarm = new AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_ALARM)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build();
+        try {
+            // buang saluran sapaan versi lama (mis. _v1) agar daftar saluran di Setelan HP tidak menumpuk
+            String keep = "_" + NAMED_VER;
+            for (NotificationChannel old : nm.getNotificationChannels()) {
+                String id = old.getId();
+                if (id.startsWith(CH_LOUD + "_") && !id.endsWith(keep)) nm.deleteNotificationChannel(id);
+            }
+        } catch (Exception ignored) { }
         try {
             Class<?> raw = Class.forName(R.class.getName() + "$raw");
             for (Field f : raw.getFields()) {
@@ -69,7 +81,7 @@ public class MyFirebaseService extends FirebaseMessagingService {
                 NotificationChannel ch = new NotificationChannel(CH_LOUD + "_" + name + "_" + NAMED_VER,
                         "Sapaan tiket: " + name, NotificationManager.IMPORTANCE_HIGH);
                 ch.setDescription("Tiket baru untuk " + name + " (nada sapaan suara)");
-                ch.setSound(snd, aa);
+                ch.setSound(snd, alarm);
                 ch.enableVibration(true);
                 ch.setVibrationPattern(new long[]{0, 500, 250, 500, 250, 500});
                 ch.enableLights(true);
