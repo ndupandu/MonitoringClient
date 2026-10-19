@@ -9,11 +9,6 @@ import android.media.AudioAttributes;
 import android.media.RingtoneManager;
 import android.net.Uri;
 import android.os.Build;
-import android.os.Bundle;
-import android.os.Handler;
-import android.os.Looper;
-import android.speech.tts.TextToSpeech;
-import android.speech.tts.UtteranceProgressListener;
 
 import androidx.annotation.NonNull;
 import androidx.core.app.NotificationCompat;
@@ -22,21 +17,13 @@ import androidx.core.app.NotificationManagerCompat;
 import com.google.firebase.messaging.FirebaseMessagingService;
 import com.google.firebase.messaging.RemoteMessage;
 
-import java.util.Locale;
 import java.util.Map;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.TimeUnit;
 
-/**
- * Menerima FCM (data-only) baik saat APK terbuka maupun tertutup, menampilkan notifikasi, lalu mengucapkan isi "speak"
- * (mis. "Halo budi, ada tiket baru nih, ayo segera ambil") lewat TextToSpeech bila server menyertakannya.
- */
+/** Menerima FCM. Pesan "notification" saat aplikasi tertutup ditampilkan sistem sendiri; pesan data-only (berisi "speak") selalu lewat sini. */
 public class MyFirebaseService extends FirebaseMessagingService {
     public static final String CH_LOUD = "tiket_baru";   // harus sama dengan FCM_CHANNEL_LOUD di server
     public static final String CH_INFO = "tiket_info";   // harus sama dengan FCM_CHANNEL_INFO di server
     public static final String PREF = "fcm";
-    /** true = suara lewat volume ALARM (tetap bunyi walau volume notifikasi kecil); false = volume notifikasi. */
-    private static final boolean SPEAK_AS_ALARM = false;
 
     /** Panggil dari MainActivity.onCreate() DAN dari sini. Aman dipanggil berulang. */
     public static void createChannels(Context c) {
@@ -102,61 +89,12 @@ public class MyFirebaseService extends FirebaseMessagingService {
             NotificationManagerCompat.from(this).notify(tag, 0, b.build());
         } catch (SecurityException ignored) { /* izin POST_NOTIFICATIONS belum diberikan */ }
 
+        // Sapaan suara ("Halo <nama>, ada tiket baru nih ...") dari server. Saat aplikasi sedang tampil, halaman web
+        // yang mengucapkannya sendiri (supaya tidak dobel), jadi di sini dilewati.
         String speak = d.get("speak");
-        if (speak != null && !speak.trim().isEmpty()) speak(speak.trim());
-    }
-
-    /**
-     * Ucapkan teks dengan TextToSpeech. onMessageReceived berjalan di thread latar (batas ~20 detik), jadi thread ini
-     * ditahan sampai ucapan selesai agar proses tidak dimatikan sistem di tengah kalimat.
-     */
-    private void speak(final String text) {
-        final Handler main = new Handler(Looper.getMainLooper());
-        final CountDownLatch done = new CountDownLatch(1);
-        final TextToSpeech[] holder = new TextToSpeech[1];
-        final String uid = "tiket" + System.nanoTime();
-
-        main.post(() -> {
-            try {
-                holder[0] = new TextToSpeech(getApplicationContext(), status -> {
-                    TextToSpeech t = holder[0];
-                    if (t == null || status != TextToSpeech.SUCCESS) { done.countDown(); return; }
-                    try {
-                        t.setAudioAttributes(new AudioAttributes.Builder()
-                                .setUsage(SPEAK_AS_ALARM ? AudioAttributes.USAGE_ALARM : AudioAttributes.USAGE_NOTIFICATION)
-                                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build());
-                        int r = t.setLanguage(new Locale("id", "ID"));
-                        if (r == TextToSpeech.LANG_MISSING_DATA || r == TextToSpeech.LANG_NOT_SUPPORTED) {
-                            t.setLanguage(Locale.getDefault());     // suara Indonesia belum terpasang
-                        }
-                        t.setSpeechRate(0.95f);
-                        t.setOnUtteranceProgressListener(new UtteranceProgressListener() {
-                            @Override public void onStart(String id) { }
-                            @Override public void onDone(String id) { if (uid.equals(id)) done.countDown(); }
-                            @Override public void onError(String id) { if (uid.equals(id)) done.countDown(); }
-                        });
-                        // jeda 1,5 detik supaya nada notifikasi selesai dulu, baru suara bicara
-                        t.playSilentUtterance(1500, TextToSpeech.QUEUE_FLUSH, "jeda");
-                        Bundle p = new Bundle();
-                        p.putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, 1f);
-                        if (t.speak(text, TextToSpeech.QUEUE_ADD, p, uid) != TextToSpeech.SUCCESS) done.countDown();
-                    } catch (Exception e) {
-                        done.countDown();
-                    }
-                });
-            } catch (Exception e) {
-                done.countDown();
-            }
-        });
-
-        try {
-            done.await(15, TimeUnit.SECONDS);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
+        if (speak != null && !speak.trim().isEmpty() && loud && !MainActivity.visible
+                && getSharedPreferences(PREF, MODE_PRIVATE).getBoolean("voice", true)) {
+            VoiceAnnouncer.say(this, speak.trim(), 1300);       // jeda: bunyi notifikasi selesai dulu
         }
-        main.post(() -> {
-            TextToSpeech t = holder[0];
-            if (t != null) { try { t.stop(); t.shutdown(); } catch (Exception ignored) { } }
-        });
     }
 }
