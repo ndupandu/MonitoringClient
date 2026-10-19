@@ -11,6 +11,7 @@ import android.os.Looper;
 import android.os.PowerManager;
 import android.speech.tts.TextToSpeech;
 import android.speech.tts.UtteranceProgressListener;
+import android.util.Log;
 
 import java.util.Locale;
 
@@ -21,6 +22,7 @@ import java.util.Locale;
  */
 public final class VoiceAnnouncer {
     private static final Handler H = new Handler(Looper.getMainLooper());
+    private static final String TAG = "VoiceAnnouncer";
     private static final long SAFETY_MS = 20000;       // batas total: setelah ini semuanya dilepas paksa
 
     private static TextToSpeech tts;
@@ -40,6 +42,7 @@ public final class VoiceAnnouncer {
     private static void start(final Context app, final String text, final long delayMs) {
         release();
         final int my = ++gen;
+        Log.d(TAG, "start: \"" + text + "\"");
         try {
             PowerManager pm = (PowerManager) app.getSystemService(Context.POWER_SERVICE);
             if (pm != null) {
@@ -52,20 +55,24 @@ public final class VoiceAnnouncer {
         holder[0] = new TextToSpeech(app, status -> {
             if (my != gen) return;
             final TextToSpeech t = holder[0];
+            Log.d(TAG, "TTS init status=" + status);
             if (status != TextToSpeech.SUCCESS || t == null) { release(); return; }
-            t.setLanguage(new Locale("id", "ID"));      // bila data bahasa belum ada, memakai bahasa HP
+            int lang = t.setLanguage(new Locale("id", "ID"));      // bila data bahasa belum ada, memakai bahasa HP
+            Log.d(TAG, "setLanguage(id-ID)=" + lang + " (-1/-2 = suara Indonesia belum ada)");
             t.setAudioAttributes(attrs());
             t.setOnUtteranceProgressListener(new UtteranceProgressListener() {
-                @Override public void onStart(String utteranceId) { }
+                @Override public void onStart(String utteranceId) { Log.d(TAG, "mulai bicara"); }
                 @Override public void onDone(String utteranceId) { H.post(() -> { if (my == gen) release(); }); }
-                @Override public void onError(String utteranceId) { H.post(() -> { if (my == gen) release(); }); }
+                @Override public void onError(String utteranceId) { Log.w(TAG, "TTS error"); H.post(() -> { if (my == gen) release(); }); }
             });
             H.postDelayed(() -> {
                 if (my != gen) return;
                 requestFocus(app);
                 Bundle p = new Bundle();
                 p.putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, 1f);
-                if (t.speak(text, TextToSpeech.QUEUE_FLUSH, p, "tiket" + my) != TextToSpeech.SUCCESS) release();
+                int r = t.speak(text, TextToSpeech.QUEUE_FLUSH, p, "tiket" + my);
+                Log.d(TAG, "speak() result=" + r + " (0 = berhasil diantrekan)");
+                if (r != TextToSpeech.SUCCESS) release();
             }, Math.max(0, delayMs));
         });
         tts = holder[0];
@@ -74,7 +81,7 @@ public final class VoiceAnnouncer {
 
     private static AudioAttributes attrs() {
         return new AudioAttributes.Builder()
-                .setUsage(AudioAttributes.USAGE_NOTIFICATION)        // mengikuti mode senyap / volume notifikasi
+                .setUsage(AudioAttributes.USAGE_ALARM)               // tetap terdengar walau mode senyap / volume notifikasi 0
                 .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build();
     }
 
